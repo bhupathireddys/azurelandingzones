@@ -1,0 +1,136 @@
+name: Hub-N-Spoke
+
+trigger:
+  branches:
+    include:
+      - hubspokeprd  # Trigger ONLY on hubspokeprd branch
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: hub-n-spoke  # Variable Group Name
+  - name: env
+    value: 'prd'  # Environment matches prd.tfvars
+
+stages:
+  - stage: Production
+    displayName: 'Terraform Hub n Spoke Network Deployment'
+    jobs:
+      - job: Terraform
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+
+          # Debug Variables
+          - script: |
+              echo "ARM_CLIENT_ID: $(client_id)"
+              echo "ARM_TENANT_ID: $(tenant_id)"
+              echo "ARM_SUBSCRIPTION_ID: $(subscription_id)"
+              echo "Backend Storage Account: $(terraformbackendstorageaccount)"
+              echo "Container Name: $(terraformbackendstoragecontainer)"
+              echo "Resource Group: $(terraformbackendresourcegroup)"
+              echo "State File: $(terraformhubspokestatefilename)"
+              echo "hubsub_ID: $(hubsub_ID)"
+              echo "iamsub_ID: $(iamsub_ID)"
+              echo "subs completed"
+            displayName: 'Debug: Verify Variables'
+
+          # Check if tfvars file exists
+          - script: |
+              echo "===== Listing terraform/environments directory ====="
+              ls -la $(Build.SourcesDirectory)/terraform/environments/
+              echo "Checking if tfvars file exists: $(env).tfvars"
+              if [ ! -f $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars ]; then
+                echo "ERROR: tfvars file $(env).tfvars does not exist!"
+                exit 1
+              fi
+            displayName: 'Debug: Check tfvars file existence'
+
+          # SED Replace Tokens - Absolute Paths
+          - script: |
+              TFVARS_FILE=$(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              echo "Replacing Subscription IDs in $TFVARS_FILE"
+              sed -i "s|##{hubsub_ID}##|$(hubsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{iamsub_ID}##|$(iamsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{mgmtsub_ID}##|$(mgmtsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{eopssub_ID}##|$(eopssub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{eopsnpsub_ID}##|$(eopsnpsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{splussub_ID}##|$(splussub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{splusnpsub_ID}##|$(splusnpsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{ccaresub_ID}##|$(ccaresub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{ccarenpsub_ID}##|$(ccarenpsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{icaresub_ID}##|$(icaresub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{icarenpsub_ID}##|$(icarenpsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{dataopssub_ID}##|$(dataopssub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{dataopsnpsub_ID}##|$(dataopsnpsub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{busopssub_ID}##|$(busopssub_ID)|g" $TFVARS_FILE
+              sed -i "s|##{busopsnpsub_ID}##|$(busopsnpsub_ID)|g" $TFVARS_FILE
+            displayName: 'SED Replace Subscription IDs'
+
+          # Debug replaced tfvars
+          - script: |
+              echo "===== Debug: Content of $(env).tfvars after SED replace ====="
+              cat $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+            displayName: 'Debug: Check tfvars after SED replacement'
+          
+          # Terraform Init (rest same...)
+
+
+          # Terraform Init
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)
+              terraform init \
+                -backend-config="storage_account_name=$(terraformbackendstorageaccount)" \
+                -backend-config="container_name=$(terraformbackendstoragecontainer)" \
+                -backend-config="key=$(terraformhubspokestatefilename)" \
+                -backend-config="resource_group_name=$(terraformbackendresourcegroup)"
+            displayName: 'Terraform Init'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+            env:
+              ARM_CLIENT_ID: $(client_id)
+              ARM_CLIENT_SECRET: $(client_secret)
+              ARM_TENANT_ID: $(tenant_id)
+              ARM_SUBSCRIPTION_ID: $(subscription_id)
+
+          # Terraform Validate
+          - script: terraform validate
+            displayName: 'Terraform Validate'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Terraform Plan
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)
+              terraform plan -input=false \
+                             -var="client_id=$(client_id)" \
+                             -var="client_secret=$(client_secret)" \
+                             -var="tenant_id=$(tenant_id)" \
+                             -var="subscription_id=$(subscription_id)" \
+                             -var="storage_account=$(terraformbackendstorageaccount)" \
+                             -var="container_name=$(terraformbackendstoragecontainer)" \
+                             -var="resource_group_name=$(terraformbackendresourcegroup)" \
+                             -var-file="environments/$(env).tfvars" \
+                             -out=plan.tfplan
+            displayName: 'Terraform Plan'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Cleanup unnecessary files
+          - script: |
+              rm -rf .terraform
+              rm -f .terraform.lock.hcl
+            displayName: 'Cleanup: Remove .terraform & lock file'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Publish Plan Artifact
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Terraform Plan Artifact'
+            inputs:
+              artifactName: 'terraform_network_prd'
+              pathToPublish: '$(Build.SourcesDirectory)/terraform'
+              publishLocation: 'Container'

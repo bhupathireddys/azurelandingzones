@@ -1,0 +1,2450 @@
+# Central US Hub
+module "hub_cus" {
+  source                = "./modules/hub"
+  subscription_settings = var.subscription_settings["hubcus"]
+  regions_short         = var.regions_short
+  providers             = { azurerm = azurerm.hubcus }
+  enable_firewall       = var.enable_firewall
+  firewall_private_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+}
+
+# West US3 Hub
+module "hub_wus3" {
+  source                = "./modules/hub"
+  subscription_settings = var.subscription_settings["hubwus3"]
+  regions_short         = var.regions_short
+  providers             = { azurerm = azurerm.hubwus3 }
+  enable_firewall       = var.enable_firewall
+  firewall_private_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+}
+
+# NAT Gateway CUS Hub (only if firewall disabled)
+module "nat_cus" {
+  source = "./modules/nat"
+  providers = { azurerm = azurerm.hubcus }
+  enable_firewall = var.enable_firewall
+  resource_group_name = module.hub_cus.resource_group_name
+  location            = var.subscription_settings["hubcus"].region
+  root_id             = var.subscription_settings["hubcus"].root_id
+  env                 = var.subscription_settings["hubcus"].env
+  region_short        = var.regions_short[var.subscription_settings["hubcus"].region]
+}
+
+# NAT Gateway wus3 Hub
+module "nat_wus3" {
+  source = "./modules/nat"
+  providers = { azurerm = azurerm.hubwus3 }
+  enable_firewall = var.enable_firewall
+  resource_group_name = module.hub_wus3.resource_group_name
+  location            = var.subscription_settings["hubwus3"].region
+  root_id             = var.subscription_settings["hubwus3"].root_id
+  env                 = var.subscription_settings["hubwus3"].env
+  region_short        = var.regions_short[var.subscription_settings["hubwus3"].region]
+}
+
+# Conditional Firewall CUS
+module "firewall_cus" {
+  source    = "./modules/firewall"
+  providers = { azurerm = azurerm.hubcus }
+  count     = var.enable_firewall ? 1 : 0
+  location  = var.subscription_settings["hubcus"].region
+  firewall_subnet_id  = module.hub_cus.subnet_ids["firewall"]
+  management_subnet_id = module.hub_cus.subnet_ids["firewall-mgmt"]
+  sku_tier  = var.firewall_sku
+  resource_group_name = module.hub_cus.resource_group_name
+  root_id   = var.subscription_settings["hubcus"].root_id
+  subscription_settings = var.subscription_settings["hubcus"]
+  regions_short = var.regions_short
+}
+
+# Conditional Firewall wus3
+module "firewall_wus3" {
+  source    = "./modules/firewall"
+  providers = { azurerm = azurerm.hubwus3 }
+  count     = var.enable_firewall ? 1 : 0
+  location  = var.subscription_settings["hubwus3"].region
+  firewall_subnet_id  = module.hub_wus3.subnet_ids["firewall"]
+  management_subnet_id = module.hub_wus3.subnet_ids["firewall-mgmt"]
+  sku_tier  = var.firewall_sku
+  resource_group_name = module.hub_wus3.resource_group_name
+  root_id   = var.subscription_settings["hubwus3"].root_id
+  subscription_settings = var.subscription_settings["hubwus3"]
+  regions_short = var.regions_short
+}
+
+###########################################################################
+
+# #   ********* Workload Virtual Networks for both Regions ********* 
+
+### *************************            PROD vNets              ************************
+# Identity Prod vNet in Central US
+ module "iam_prd_cus" {
+   source                = "./modules/spoke"
+   providers             = { azurerm = azurerm.iamprdcus }
+   subscription_settings = var.subscription_settings["iamprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+   depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+# Identity Prod vNet in West US3
+module "iam_prd_wus3" {
+  source                          = "./modules/spoke"
+  providers                       = { azurerm = azurerm.iamprdwus3 }
+  subscription_settings           = var.subscription_settings["iamprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Management Prod vNet in  Central US
+module "mgmt_prd_cus" {
+  source                          = "./modules/spoke"
+  providers                       = { azurerm = azurerm.mgmtprdcus }
+  subscription_settings           = var.subscription_settings["mgmtprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+
+}
+# Management Prod vNet in  West US3
+module "mgmt_prd_wus3" {
+  source                          = "./modules/spoke"
+  providers                       = { azurerm = azurerm.mgmtprdwus3 }
+  subscription_settings           = var.subscription_settings["mgmtprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+
+}
+
+# EnterpriseOps Prod vNets in Central US
+module "eops_prd_cus" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsprdcus }
+  subscription_settings   = var.subscription_settings["eopsprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+
+}
+
+# EnterpriseOps Prod vNets in West US3
+module "eops_prd_wus3" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsprdwus3 }
+  subscription_settings   = var.subscription_settings["eopsprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# SurgeryPlus prod vNet in Central US
+module "splus_prd_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.splusprdcus }
+  subscription_settings               = var.subscription_settings["splusprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# SurgeryPlus Prod vNet in West US3
+module "splus_prd_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.splusprdwus3 }
+  subscription_settings               = var.subscription_settings["splusprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Cancer Care Prod vNet in Central US
+module "ccare_prd_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccareprdcus }
+  subscription_settings               = var.subscription_settings["ccareprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Cancer Care Prod vNet in West US3
+module "ccare_prd_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccareprdwus3 }
+  subscription_settings               = var.subscription_settings["ccareprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Infusion Care prod vNet in Central US
+module "icare_prd_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icareprdcus }
+  subscription_settings               = var.subscription_settings["icareprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Infusion Care Prod vNet in West US3
+module "icare_prd_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icareprdwus3 }
+  subscription_settings               = var.subscription_settings["icareprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# DataOps Prod vNet in Central US
+module "dataops_prd_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsprdcus }
+  subscription_settings               = var.subscription_settings["dataopsprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# DataOps Prod vNet in West US3
+module "dataops_prd_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsprdwus3 }
+  subscription_settings               = var.subscription_settings["dataopsprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+# BusOps Prod vNet in Central US
+module "busops_prd_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsprdcus }
+  subscription_settings               = var.subscription_settings["busopsprdcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# BusOps Prod vNet in West US3
+module "busops_prd_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsprdwus3 }
+  subscription_settings               = var.subscription_settings["busopsprdwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+
+
+### *************************            Dev vNets              ************************
+
+# Identity Dev vNet in Central US
+ module "iam_dev_cus" {
+   source                = "./modules/spoke"
+   providers             = { azurerm = azurerm.iamdevcus }
+   subscription_settings = var.subscription_settings["iamdevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+   depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+# Identity Dev vNet in West US3
+module "iam_dev_wus3" {
+  source                          = "./modules/spoke"
+  providers                       = { azurerm = azurerm.iamdevwus3 }
+  subscription_settings           = var.subscription_settings["iamdevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Management Dev vNet in  Central US
+module "mgmt_dev_cus" {
+  source                          = "./modules/spoke"
+  providers                       = { azurerm = azurerm.mgmtdevcus }
+  subscription_settings           = var.subscription_settings["mgmtdevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+
+}
+# Management Dev vNet in  West US3
+module "mgmt_dev_wus3" {
+  source                          = "./modules/spoke"
+  providers                       = { azurerm = azurerm.mgmtdevwus3 }
+  subscription_settings           = var.subscription_settings["mgmtdevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+
+}
+
+# EnterpriseOps Dev vNets in Central US
+module "eops_dev_cus" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsdevcus }
+  subscription_settings   = var.subscription_settings["eopsdevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+
+}
+
+# EnterpriseOps Dev vNets in West US3
+module "eops_dev_wus3" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsdevwus3 }
+  subscription_settings   = var.subscription_settings["eopsdevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# SurgeryPlus Dev vNet in Central US
+module "splus_dev_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.splusdevcus }
+  subscription_settings               = var.subscription_settings["splusdevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# SurgeryPlus Dev vNet in West US3
+module "splus_dev_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.splusdevwus3 }
+  subscription_settings               = var.subscription_settings["splusdevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Cancer Care Dev vNet in Central US
+module "ccare_dev_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccaredevcus }
+  subscription_settings               = var.subscription_settings["ccaredevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Cancer Care Dev vNet in West US3
+module "ccare_dev_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccaredevwus3 }
+  subscription_settings               = var.subscription_settings["ccaredevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Infusion Care Dev vNet in Central US
+module "icare_dev_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icaredevcus }
+  subscription_settings               = var.subscription_settings["icaredevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Infusion Care Dev vNet in West US3
+module "icare_dev_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icaredevwus3 }
+  subscription_settings               = var.subscription_settings["icaredevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# DataOps Dev vNet in Central US
+module "dataops_dev_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsdevcus }
+  subscription_settings               = var.subscription_settings["dataopsdevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# DataOps Dev vNet in West US3
+module "dataops_dev_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsdevwus3 }
+  subscription_settings               = var.subscription_settings["dataopsdevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+# BusOps Dev vNet in Central US
+module "busops_dev_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsdevcus }
+  subscription_settings               = var.subscription_settings["busopsdevcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# BusOps Dev vNet in West US3
+module "busops_dev_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsdevwus3 }
+  subscription_settings               = var.subscription_settings["busopsdevwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+
+
+### *************************            QA vNets              ************************
+
+# EnterpriseOps QA vNets in Central US
+module "eops_qa_cus" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsqacus }
+  subscription_settings   = var.subscription_settings["eopsqacus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+
+}
+
+# EnterpriseOps QA vNets in West US3
+module "eops_qa_wus3" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsqawus3 }
+  subscription_settings   = var.subscription_settings["eopsqawus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# SurgeryPlus QA vNet in Central US
+module "splus_qa_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.splusqacus }
+  subscription_settings               = var.subscription_settings["splusqacus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# SurgeryPlus QA vNet in West US3
+module "splus_qa_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.splusqawus3 }
+  subscription_settings               = var.subscription_settings["splusqawus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Cancer Care QA vNet in Central US
+module "ccare_qa_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccareqacus }
+  subscription_settings               = var.subscription_settings["ccareqacus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Cancer Care QA vNet in West US3
+module "ccare_qa_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccareqawus3 }
+  subscription_settings               = var.subscription_settings["ccareqawus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Infusion Care QA vNet in Central US
+module "icare_qa_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icareqacus }
+  subscription_settings               = var.subscription_settings["icareqacus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Infusion Care QA vNet in West US3
+module "icare_qa_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icareqawus3 }
+  subscription_settings               = var.subscription_settings["icareqawus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# DataOps QA vNet in Central US
+module "dataops_qa_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsqacus }
+  subscription_settings               = var.subscription_settings["dataopsqacus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# DataOps QA vNet in West US3
+module "dataops_qa_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsqawus3 }
+  subscription_settings               = var.subscription_settings["dataopsqawus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+# BusOps QA vNet in Central US
+module "busops_qa_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsqacus }
+  subscription_settings               = var.subscription_settings["busopsqacus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# BusOps QA vNet in West US3
+module "busops_qa_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsqawus3 }
+  subscription_settings               = var.subscription_settings["busopsqawus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+
+
+
+### *************************            Staging vNets              ************************
+
+
+#  EnterpriseOps Staging vNets in Central US
+module "eops_stg_cus" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsstgcus }
+  subscription_settings   = var.subscription_settings["eopsstgcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+
+}
+
+#  EnterpriseOps Staging vNets in West US3
+module "eops_stg_wus3" {
+  source                  = "./modules/spoke"
+  providers               = { azurerm = azurerm.eopsstgwus3 }
+  subscription_settings   = var.subscription_settings["eopsstgwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+
+}
+
+# SurgeryPlus Staging vNet in Central US
+module "splus_stg_cus" {
+  source                  = "./modules/spoke"
+  providers = { azurerm = azurerm.splusstgcus }
+  subscription_settings   = var.subscription_settings["splusstgcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# SurgeryPlus Staging vNet in West US3
+module "splus_stg_wus3" {
+  source                  = "./modules/spoke"
+  providers = { azurerm = azurerm.splusstgwus3 }
+  subscription_settings   = var.subscription_settings["splusstgwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+
+# Cancer Care Staging vNet in Central US
+module "ccare_stg_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccarestgcus }
+  subscription_settings               = var.subscription_settings["ccarestgcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Cancer Care Staging vNet in West US3
+module "ccare_stg_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.ccarestgwus3 }
+  subscription_settings               = var.subscription_settings["ccarestgwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# Infusion Care Staging vNet in Central US
+module "icare_stg_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icarestgcus }
+  subscription_settings               = var.subscription_settings["icarestgcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# Infusion Care Staging vNet in West US3
+module "icare_stg_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.icarestgwus3 }
+  subscription_settings               = var.subscription_settings["icarestgwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+# DataOps Staging vNet in Central US
+module "dataops_stg_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsstgcus }
+  subscription_settings               = var.subscription_settings["dataopsstgcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# DataOps Staging vNet in West US3
+module "dataops_stg_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.dataopsstgwus3 }
+  subscription_settings               = var.subscription_settings["dataopsstgwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+# BusOps Staging vNet in Central US
+module "busops_stg_cus" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsstgcus }
+  subscription_settings               = var.subscription_settings["busopsstgcus"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_cus,
+    module.firewall_cus,
+    module.hub_cus,
+  ]
+}
+
+# BusOps Staging vNet in West US3
+module "busops_stg_wus3" {
+  source                              = "./modules/spoke"
+  providers                           = { azurerm = azurerm.busopsstgwus3 }
+  subscription_settings               = var.subscription_settings["busopsstgwus3"]
+  regions_short         = var.regions_short
+  enable_firewall       = var.enable_firewall
+  primary_hub_fw_ip     = var.enable_firewall ? try(module.firewall_wus3[0].firewall_private_ip, null) : null
+  secondary_hub_fw_ip   = var.enable_firewall ? try(module.firewall_cus[0].firewall_private_ip, null) : null
+  depends_on = [
+    module.nat_wus3,
+    module.firewall_wus3,
+    module.hub_wus3
+  ]
+}
+
+
+#      *******************   END of Virtual Networks   ******************* 
+
+#      *******************  Peerings Stage   *******************
+
+#####  HUB Central US to Hub West US3
+# Hub-to-Hub Peering
+module "hub_cus_to_wus3" {
+  source                  = "./modules/peering"
+  providers               = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name        = module.hub_cus.vnet_name
+  remote_vnet_id          = module.hub_wus3.vnet_id
+  peering_name            = "${var.subscription_settings["hubcus"].root_id}-hub-cus-to-hub-wus3"
+  allow_gateway_transit   = true
+  allow_forwarded_traffic = true
+  depends_on = [
+    module.hub_cus,
+    module.hub_wus3
+  ]
+}
+
+#####  HUB West US3 to Hub Central US
+
+module "hub_wus3_to_cus" {
+  source                  = "./modules/peering"
+  providers               = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name        = module.hub_wus3.vnet_name
+  remote_vnet_id          = module.hub_cus.vnet_id
+  peering_name            = "${var.subscription_settings["hubwus3"].root_id}-hub-wus3-to-hub-cus"
+  allow_gateway_transit   = true
+  allow_forwarded_traffic = true
+  depends_on = [
+    module.hub_cus,
+    module.hub_wus3
+  ]
+}
+
+# -------------------------
+# IAM Prod CUS
+# -------------------------
+module "hub_cus_to_iam_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["iamprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.iam_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["iamprdcus"].workload}-${var.subscription_settings["iamprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on    = [
+    module.iam_prd_cus,
+    module.hub_cus]
+}
+
+
+module "iam_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.iamprdcus }
+  #subscription_settings = var.subscription_settings["iamprdcus"]
+  source_resource_group_name = module.iam_prd_cus.resource_group_name
+  source_vnet_name    = module.iam_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        = "${var.subscription_settings["iamprdcus"].workload}-${var.subscription_settings["iamprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_iam_prd_cus]
+}
+
+#-------------------------
+# IAM Prod WUS3
+# -------------------------
+module "hub_wus3_to_iam_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  #subscription_settings = var.subscription_settings["iamprdwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.iam_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["iamprdwus3"].workload}-${var.subscription_settings["iamprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on    = [module.iam_prd_wus3, 
+                    module.hub_wus3
+  ]
+}
+
+module "iam_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.iamprdwus3 }
+  #subscription_settings = var.subscription_settings["iamprdwus3"]
+  source_resource_group_name = module.iam_prd_wus3.resource_group_name
+  source_vnet_name    = module.iam_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        = "${var.subscription_settings["iamprdwus3"].workload}-${var.subscription_settings["iamprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_iam_prd_wus3]
+}
+
+# # IAM Dev CUS
+module "hub_cus_to_iam_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["iamdevcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.iam_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["iamdevcus"].workload}-${var.subscription_settings["iamdevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.iam_dev_cus, module.hub_cus ]
+}
+
+module "iam_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.iamdevcus }
+  #subscription_settings = var.subscription_settings["iamdevcus"]
+  source_resource_group_name = module.iam_dev_cus.resource_group_name
+  source_vnet_name    = module.iam_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["iamdevcus"].workload}-${var.subscription_settings["iamdevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_iam_dev_cus]
+}
+
+
+# # IAM Dev WUS3
+#-------------------------
+module "hub_wus3_to_iam_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+ # subscription_settings = var.subscription_settings["iamdevwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.iam_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["iamdevwus3"].workload}-${var.subscription_settings["iamdevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on          = [ module.iam_dev_wus3, module.hub_wus3 ]
+}
+
+module "iam_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.iamdevwus3 }
+  #subscription_settings = var.subscription_settings["iamdevwus3"]
+  source_resource_group_name = module.iam_dev_wus3.resource_group_name
+  source_vnet_name    = module.iam_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["iamdevwus3"].workload}-${var.subscription_settings["iamdevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_iam_dev_wus3]
+}
+
+#-------------------------
+# Mgmt Prod CUS
+#-------------------------
+module "hub_cus_to_mgmt_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["mgmtprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.mgmt_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["mgmtprdcus"].workload}-${var.subscription_settings["mgmtprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.mgmt_prd_cus, module.hub_cus ]
+}
+
+module "mgmt_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.mgmtprdcus }
+  #subscription_settings = var.subscription_settings["mgmtprdcus"]
+  source_resource_group_name = module.mgmt_prd_cus.resource_group_name
+  source_vnet_name    = module.mgmt_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["mgmtprdcus"].workload}-${var.subscription_settings["mgmtprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_mgmt_prd_cus]
+}
+
+#-------------------------
+# Mgmt Prod WUS3
+#-------------------------
+module "hub_wus3_to_mgmt_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+ # subscription_settings = var.subscription_settings["mgmtprdwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.mgmt_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["mgmtprdwus3"].workload}-${var.subscription_settings["mgmtprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.mgmt_prd_wus3, module.hub_wus3 ]
+}
+
+module "mgmt_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.mgmtprdwus3 }
+  #subscription_settings = var.subscription_settings["mgmtprdwus3"]
+  source_resource_group_name = module.mgmt_prd_wus3.resource_group_name
+  source_vnet_name    = module.mgmt_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["mgmtprdwus3"].workload}-${var.subscription_settings["mgmtprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_mgmt_prd_wus3]
+}
+
+# # Mgmt Dev CUS
+module "hub_cus_to_mgmt_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["mgmtdevcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.mgmt_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["mgmtdevcus"].workload}-${var.subscription_settings["mgmtdevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.mgmt_dev_cus, module.hub_cus ]
+}
+
+module "mgmt_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.mgmtdevcus }
+  #subscription_settings = var.subscription_settings["mgmtdevcus"]
+  source_resource_group_name = module.mgmt_dev_cus.resource_group_name
+  source_vnet_name    = module.mgmt_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["mgmtdevcus"].workload}-${var.subscription_settings["mgmtdevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_mgmt_dev_cus]
+}
+
+# # Mgmt Dev WUS3
+#-------------------------
+module "hub_wus3_to_mgmt_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  #subscription_settings = var.subscription_settings["mgmtdevwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.mgmt_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["mgmtdevwus3"].workload}-${var.subscription_settings["mgmtdevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.mgmt_dev_wus3, module.hub_wus3 ]
+}
+
+module "mgmt_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.mgmtdevwus3 }
+  #subscription_settings = var.subscription_settings["mgmtdevwus3"]
+  source_resource_group_name = module.mgmt_dev_wus3.resource_group_name
+  source_vnet_name    = module.mgmt_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["mgmtdevwus3"].workload}-${var.subscription_settings["mgmtdevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_mgmt_dev_wus3]
+}
+
+#-------------------------
+# EOPs Prd CUS
+#-------------------------
+module "hub_cus_to_eops_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["eopsprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.eops_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["eopsprdcus"].workload}-${var.subscription_settings["eopsprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_prd_cus, module.hub_cus ]
+}
+
+module "eops_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsprdcus }
+  # subscription_settings = var.subscription_settings["eopsprdcus"]
+  source_resource_group_name = module.eops_prd_cus.resource_group_name
+  source_vnet_name    = module.eops_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsprdcus"].workload}-${var.subscription_settings["eopsprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_eops_prd_cus]
+}
+
+#-------------------------
+# EOPs Prd WUS3
+#-------------------------
+module "hub_wus3_to_eops_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  # subscription_settings = var.subscription_settings["eopsprdwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.eops_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["eopsprdwus3"].workload}-${var.subscription_settings["eopsprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_prd_wus3, module.hub_wus3 ]
+}
+
+module "eops_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsprdwus3 }
+  #subscription_settings = var.subscription_settings["eopsprdwus3"]
+  source_resource_group_name = module.eops_prd_wus3.resource_group_name
+  source_vnet_name    = module.eops_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsprdwus3"].workload}-${var.subscription_settings["eopsprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_eops_prd_wus3]
+}
+
+# # EOPs Dev CUS
+#-------------------------
+module "hub_cus_to_eops_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["eopsdevcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.eops_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["eopsdevcus"].workload}-${var.subscription_settings["eopsdevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_dev_cus, module.hub_cus ]
+}
+
+module "eops_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsdevcus }
+  #subscription_settings = var.subscription_settings["eopsdevcus"]
+  source_resource_group_name = module.eops_dev_cus.resource_group_name
+  source_vnet_name    = module.eops_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsdevcus"].workload}-${var.subscription_settings["eopsdevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_eops_dev_cus]
+}
+
+# # EOPs Dev WUS3
+module "hub_wus3_to_eops_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  #subscription_settings = var.subscription_settings["eopsdevwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.eops_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["eopsdevwus3"].workload}-${var.subscription_settings["eopsdevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_dev_wus3, module.hub_wus3 ]
+}
+
+module "eops_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsdevwus3 }
+  #subscription_settings = var.subscription_settings["eopsdevwus3"]
+  source_resource_group_name = module.eops_dev_wus3.resource_group_name
+  source_vnet_name    = module.eops_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsdevwus3"].workload}-${var.subscription_settings["eopsdevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_eops_dev_wus3]
+}
+
+
+# # EOPs QA CUS
+module "hub_cus_to_eops_qa_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["eopsqacus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.eops_qa_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["eopsqacus"].workload}-${var.subscription_settings["eopsqacus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_qa_cus, module.hub_cus ]
+}
+
+module "eops_qa_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsqacus }
+  #subscription_settings = var.subscription_settings["eopsqacus"]
+  source_resource_group_name = module.eops_qa_cus.resource_group_name
+  source_vnet_name    = module.eops_qa_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsqacus"].workload}-${var.subscription_settings["eopsqacus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_eops_qa_cus]
+}
+
+# # EOPs QA WUS3
+#-------------------------
+module "hub_wus3_to_eops_qa_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+ # subscription_settings = var.subscription_settings["eopsqawus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.eops_qa_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["eopsqawus3"].workload}-${var.subscription_settings["eopsqawus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_qa_wus3, module.hub_wus3 ]
+}
+
+module "eops_qa_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsqawus3 }
+  #subscription_settings = var.subscription_settings["eopsqawus3"]
+  source_resource_group_name = module.eops_qa_wus3.resource_group_name
+  source_vnet_name    = module.eops_qa_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsqawus3"].workload}-${var.subscription_settings["eopsqawus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_eops_qa_wus3]
+}
+
+
+# # EOPs Stg CUS
+module "hub_cus_to_eops_stg_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["eopsstgcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.eops_stg_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["eopsstgcus"].workload}-${var.subscription_settings["eopsstgcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_stg_cus, module.hub_cus ]
+}
+
+module "eops_stg_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsstgcus }
+  #subscription_settings = var.subscription_settings["eopsstgcus"]
+  source_resource_group_name = module.eops_stg_cus.resource_group_name
+  source_vnet_name    = module.eops_stg_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsstgcus"].workload}-${var.subscription_settings["eopsstgcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_eops_stg_cus]
+}
+
+# # EOPs Stg WUS3
+#-------------------------
+module "hub_wus3_to_eops_stg_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  #subscription_settings = var.subscription_settings["eopsstgwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.eops_stg_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["eopsstgwus3"].workload}-${var.subscription_settings["eopsstgwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.eops_stg_wus3, module.hub_wus3 ]
+}
+
+module "eops_stg_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.eopsstgwus3 }
+ # subscription_settings = var.subscription_settings["eopsstgwus3"]
+  source_resource_group_name = module.eops_stg_wus3.resource_group_name
+  source_vnet_name    = module.eops_stg_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["eopsstgwus3"].workload}-${var.subscription_settings["eopsstgwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_eops_stg_wus3]
+}
+
+
+
+#-------------------------
+# SPLUS Prod CUS
+#-------------------------
+module "hub_cus_to_splus_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["splusprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.splus_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["splusprdcus"].workload}-${var.subscription_settings["splusprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.splus_prd_cus, module.hub_cus ]
+}
+
+module "splus_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusprdcus }
+  #subscription_settings = var.subscription_settings["splusprdcus"]
+  source_resource_group_name = module.splus_prd_cus.resource_group_name
+  source_vnet_name    = module.splus_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["splusprdcus"].workload}-${var.subscription_settings["splusprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_splus_prd_cus]
+}
+
+#-------------------------
+# SPLUS Prod WUS3
+#-------------------------
+module "hub_wus3_to_splus_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  #subscription_settings = var.subscription_settings["splusprdwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.splus_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["splusprdwus3"].workload}-${var.subscription_settings["splusprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on  = [module.splus_prd_wus3, module.hub_wus3 ]
+}
+
+module "splus_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusprdwus3 }
+  #subscription_settings = var.subscription_settings["splusprdwus3"]
+  source_resource_group_name = module.splus_prd_wus3.resource_group_name
+  source_vnet_name    = module.splus_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["splusprdwus3"].workload}-${var.subscription_settings["splusprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_splus_prd_wus3]
+}
+
+#-------------------------
+# SPLUS Dev CUS
+#-------------------------
+module "hub_cus_to_splus_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["splusdevcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.splus_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["splusdevcus"].workload}-${var.subscription_settings["splusdevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.splus_dev_cus, module.hub_cus ]
+}
+
+module "splus_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusdevcus }
+  #subscription_settings = var.subscription_settings["splusdevcus"]
+  source_resource_group_name = module.splus_dev_cus.resource_group_name
+  source_vnet_name    = module.splus_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["splusdevcus"].workload}-${var.subscription_settings["splusdevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_splus_dev_cus]
+}
+
+#-------------------------
+# SPLUS Dev WUS3
+#-------------------------
+module "hub_wus3_to_splus_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  #subscription_settings = var.subscription_settings["splusdevwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.splus_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["splusdevwus3"].workload}-${var.subscription_settings["splusdevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on  = [module.splus_dev_wus3, module.hub_wus3]
+}
+
+module "splus_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusdevwus3 }
+  #subscription_settings = var.subscription_settings["splusdevwus3"]
+  source_resource_group_name = module.splus_dev_wus3.resource_group_name
+  source_vnet_name    = module.splus_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["splusdevwus3"].workload}-${var.subscription_settings["splusdevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_splus_dev_wus3]
+}
+
+# # SPLUS QA CUS
+
+module "hub_cus_to_splus_qa_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["splusqacus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.splus_qa_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["splusqacus"].workload}-${var.subscription_settings["splusqacus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.splus_qa_cus, module.hub_cus ]
+}
+
+module "splus_qa_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusqacus }
+ # subscription_settings = var.subscription_settings["splusqacus"]
+  source_resource_group_name = module.splus_qa_cus.resource_group_name
+  source_vnet_name    = module.splus_qa_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["splusqacus"].workload}-${var.subscription_settings["splusqacus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_splus_qa_cus]
+}
+
+# # SPLUS QA WUS3
+
+module "hub_wus3_to_splus_qa_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+ # subscription_settings = var.subscription_settings["splusqawus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.splus_qa_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["splusqawus3"].workload}-${var.subscription_settings["splusqawus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on  = [module.splus_qa_wus3, module.hub_wus3]
+}
+
+module "splus_qa_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusqawus3 }
+  #subscription_settings = var.subscription_settings["splusqawus3"]
+  source_resource_group_name = module.splus_qa_wus3.resource_group_name
+  source_vnet_name    = module.splus_qa_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["splusqawus3"].workload}-${var.subscription_settings["splusqawus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_splus_qa_wus3]
+}
+
+
+# # SPLUS Stg CUS
+
+module "hub_cus_to_splus_stg_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  #subscription_settings = var.subscription_settings["splusstgcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.splus_stg_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["splusstgcus"].workload}-${var.subscription_settings["splusstgcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.splus_stg_cus, module.hub_cus ]
+}
+
+module "splus_stg_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusstgcus }
+ # subscription_settings = var.subscription_settings["splusstgcus"]
+  source_resource_group_name = module.splus_stg_cus.resource_group_name
+  source_vnet_name    = module.splus_stg_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["splusstgcus"].workload}-${var.subscription_settings["splusstgcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_splus_stg_cus]
+}
+
+# # SPLUS Stg WUS3
+
+module "hub_wus3_to_splus_stg_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+ # subscription_settings = var.subscription_settings["splusstgwus3"]
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.splus_stg_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["splusstgwus3"].workload}-${var.subscription_settings["splusstgwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on  = [module.splus_stg_wus3, module.hub_wus3 ]
+}
+
+module "splus_stg_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.splusstgwus3 }
+  #subscription_settings = var.subscription_settings["splusstgwus3"]
+  source_resource_group_name = module.splus_stg_wus3.resource_group_name
+  source_vnet_name    = module.splus_stg_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["splusstgwus3"].workload}-${var.subscription_settings["splusstgwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_splus_stg_wus3]
+}
+
+#-------------------------
+# ccare Prd CUS
+#-------------------------
+module "hub_cus_to_ccare_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["ccareprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.ccare_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["ccareprdcus"].workload}-${var.subscription_settings["ccareprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_prd_cus, module.hub_cus ]
+}
+
+module "ccare_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccareprdcus }
+  # subscription_settings = var.subscription_settings["ccareprdcus"]
+  source_resource_group_name = module.ccare_prd_cus.resource_group_name
+  source_vnet_name    = module.ccare_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["ccareprdcus"].workload}-${var.subscription_settings["ccareprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_ccare_prd_cus]
+}
+
+#-------------------------
+# CancerCare Prd WUS3
+#-------------------------
+module "hub_wus3_to_ccare_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.ccare_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["ccareprdwus3"].workload}-${var.subscription_settings["ccareprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_prd_wus3, module.hub_wus3 ]
+}
+
+module "ccare_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccareprdwus3 }
+  source_resource_group_name = module.ccare_prd_wus3.resource_group_name
+  source_vnet_name    = module.ccare_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["ccareprdwus3"].workload}-${var.subscription_settings["ccareprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_ccare_prd_wus3]
+}
+
+# # ccare Dev CUS
+#-------------------------
+module "hub_cus_to_ccare_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.ccare_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["ccaredevcus"].workload}-${var.subscription_settings["ccaredevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_dev_cus, module.hub_cus ]
+}
+
+module "ccare_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccaredevcus }
+  source_resource_group_name = module.ccare_dev_cus.resource_group_name
+  source_vnet_name    = module.ccare_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["ccaredevcus"].workload}-${var.subscription_settings["ccaredevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_ccare_dev_cus]
+}
+
+# # ccare Dev WUS3
+module "hub_wus3_to_ccare_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.ccare_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["ccaredevwus3"].workload}-${var.subscription_settings["ccaredevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_dev_wus3, module.hub_wus3 ]
+}
+
+module "ccare_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccaredevwus3 }
+  source_resource_group_name = module.ccare_dev_wus3.resource_group_name
+  source_vnet_name    = module.ccare_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["ccaredevwus3"].workload}-${var.subscription_settings["ccaredevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_ccare_dev_wus3]
+}
+
+
+# # ccare QA CUS
+module "hub_cus_to_ccare_qa_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.ccare_qa_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["ccareqacus"].workload}-${var.subscription_settings["ccareqacus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_qa_cus, module.hub_cus ]
+}
+
+module "ccare_qa_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccareqacus }
+  source_resource_group_name = module.ccare_qa_cus.resource_group_name
+  source_vnet_name    = module.ccare_qa_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["ccareqacus"].workload}-${var.subscription_settings["ccareqacus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_ccare_qa_cus]
+}
+
+# # ccare QA WUS3
+#-------------------------
+module "hub_wus3_to_ccare_qa_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.ccare_qa_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["ccareqawus3"].workload}-${var.subscription_settings["ccareqawus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_qa_wus3, module.hub_wus3 ]
+}
+
+module "ccare_qa_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccareqawus3 }
+  source_resource_group_name = module.ccare_qa_wus3.resource_group_name
+  source_vnet_name    = module.ccare_qa_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["ccareqawus3"].workload}-${var.subscription_settings["ccareqawus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_ccare_qa_wus3]
+}
+
+
+# # ccare Stg CUS
+module "hub_cus_to_ccare_stg_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.ccare_stg_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["ccarestgcus"].workload}-${var.subscription_settings["ccarestgcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_stg_cus, module.hub_cus ]
+}
+
+module "ccare_stg_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccarestgcus }
+  source_resource_group_name = module.ccare_stg_cus.resource_group_name
+  source_vnet_name    = module.ccare_stg_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["ccarestgcus"].workload}-${var.subscription_settings["ccarestgcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_ccare_stg_cus]
+}
+
+# # ccare Stg WUS3
+#-------------------------
+module "hub_wus3_to_ccare_stg_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.ccare_stg_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["ccarestgwus3"].workload}-${var.subscription_settings["ccarestgwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.ccare_stg_wus3, module.hub_wus3 ]
+}
+
+module "ccare_stg_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.ccarestgwus3 }
+  source_resource_group_name = module.ccare_stg_wus3.resource_group_name
+  source_vnet_name    = module.ccare_stg_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["ccarestgwus3"].workload}-${var.subscription_settings["ccarestgwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_ccare_stg_wus3]
+}
+
+
+#-------------------------
+# icare Prd CUS
+#-------------------------
+module "hub_cus_to_icare_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["icareprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.icare_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["icareprdcus"].workload}-${var.subscription_settings["icareprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_prd_cus, module.hub_cus ]
+}
+
+module "icare_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icareprdcus }
+  # subscription_settings = var.subscription_settings["icareprdcus"]
+  source_resource_group_name = module.icare_prd_cus.resource_group_name
+  source_vnet_name    = module.icare_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["icareprdcus"].workload}-${var.subscription_settings["icareprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_icare_prd_cus]
+}
+
+#-------------------------
+# icare Prd WUS3
+#-------------------------
+module "hub_wus3_to_icare_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.icare_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["icareprdwus3"].workload}-${var.subscription_settings["icareprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_prd_wus3, module.hub_wus3 ]
+}
+
+module "icare_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icareprdwus3 }
+  source_resource_group_name = module.icare_prd_wus3.resource_group_name
+  source_vnet_name    = module.icare_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["icareprdwus3"].workload}-${var.subscription_settings["icareprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_icare_prd_wus3]
+}
+
+# # icare Dev CUS
+#-------------------------
+module "hub_cus_to_icare_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.icare_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["icaredevcus"].workload}-${var.subscription_settings["icaredevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_dev_cus, module.hub_cus ]
+}
+
+module "icare_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icaredevcus }
+  source_resource_group_name = module.icare_dev_cus.resource_group_name
+  source_vnet_name    = module.icare_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["icaredevcus"].workload}-${var.subscription_settings["icaredevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_icare_dev_cus]
+}
+
+# # icare Dev WUS3
+module "hub_wus3_to_icare_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.icare_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["icaredevwus3"].workload}-${var.subscription_settings["icaredevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_dev_wus3, module.hub_wus3 ]
+}
+
+module "icare_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icaredevwus3 }
+  source_resource_group_name = module.icare_dev_wus3.resource_group_name
+  source_vnet_name    = module.icare_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["icaredevwus3"].workload}-${var.subscription_settings["icaredevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_icare_dev_wus3]
+}
+
+
+# # icare QA CUS
+module "hub_cus_to_icare_qa_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.icare_qa_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["icareqacus"].workload}-${var.subscription_settings["icareqacus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_qa_cus, module.hub_cus ]
+}
+
+module "icare_qa_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icareqacus }
+  source_resource_group_name = module.icare_qa_cus.resource_group_name
+  source_vnet_name    = module.icare_qa_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["icareqacus"].workload}-${var.subscription_settings["icareqacus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_icare_qa_cus]
+}
+
+# # icare QA WUS3
+#-------------------------
+module "hub_wus3_to_icare_qa_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.icare_qa_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["icareqawus3"].workload}-${var.subscription_settings["icareqawus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_qa_wus3, module.hub_wus3 ]
+}
+
+module "icare_qa_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icareqawus3 }
+  source_resource_group_name = module.icare_qa_wus3.resource_group_name
+  source_vnet_name    = module.icare_qa_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["icareqawus3"].workload}-${var.subscription_settings["icareqawus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_icare_qa_wus3]
+}
+
+
+# # icare Stg CUS
+module "hub_cus_to_icare_stg_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.icare_stg_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["icarestgcus"].workload}-${var.subscription_settings["icarestgcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_stg_cus, module.hub_cus ]
+}
+
+module "icare_stg_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icarestgcus }
+  source_resource_group_name = module.icare_stg_cus.resource_group_name
+  source_vnet_name    = module.icare_stg_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["icarestgcus"].workload}-${var.subscription_settings["icarestgcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_icare_stg_cus]
+}
+
+# # icare Stg WUS3
+#-------------------------
+module "hub_wus3_to_icare_stg_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.icare_stg_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["icarestgwus3"].workload}-${var.subscription_settings["icarestgwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.icare_stg_wus3, module.hub_wus3 ]
+}
+
+module "icare_stg_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.icarestgwus3 }
+  source_resource_group_name = module.icare_stg_wus3.resource_group_name
+  source_vnet_name    = module.icare_stg_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["icarestgwus3"].workload}-${var.subscription_settings["icarestgwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_icare_stg_wus3]
+}
+
+#-------------------------
+# dataops Prd CUS
+#-------------------------
+module "hub_cus_to_dataops_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["dataopsprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.dataops_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["dataopsprdcus"].workload}-${var.subscription_settings["dataopsprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_prd_cus, module.hub_cus ]
+}
+
+module "dataops_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsprdcus }
+  # subscription_settings = var.subscription_settings["dataopsprdcus"]
+  source_resource_group_name = module.dataops_prd_cus.resource_group_name
+  source_vnet_name    = module.dataops_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsprdcus"].workload}-${var.subscription_settings["dataopsprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_dataops_prd_cus]
+}
+
+#-------------------------
+# dataops Prd WUS3
+#-------------------------
+module "hub_wus3_to_dataops_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.dataops_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["dataopsprdwus3"].workload}-${var.subscription_settings["dataopsprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_prd_wus3, module.hub_wus3 ]
+}
+
+module "dataops_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsprdwus3 }
+  source_resource_group_name = module.dataops_prd_wus3.resource_group_name
+  source_vnet_name    = module.dataops_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsprdwus3"].workload}-${var.subscription_settings["dataopsprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_dataops_prd_wus3]
+}
+
+# # dataops Dev CUS
+#-------------------------
+module "hub_cus_to_dataops_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.dataops_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["dataopsdevcus"].workload}-${var.subscription_settings["dataopsdevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_dev_cus, module.hub_cus ]
+}
+
+module "dataops_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsdevcus }
+  source_resource_group_name = module.dataops_dev_cus.resource_group_name
+  source_vnet_name    = module.dataops_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsdevcus"].workload}-${var.subscription_settings["dataopsdevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_dataops_dev_cus]
+}
+
+# # dataops Dev WUS3
+module "hub_wus3_to_dataops_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.dataops_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["dataopsdevwus3"].workload}-${var.subscription_settings["dataopsdevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_dev_wus3, module.hub_wus3 ]
+}
+
+module "dataops_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsdevwus3 }
+  source_resource_group_name = module.dataops_dev_wus3.resource_group_name
+  source_vnet_name    = module.dataops_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsdevwus3"].workload}-${var.subscription_settings["dataopsdevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_dataops_dev_wus3]
+}
+
+
+# # dataops QA CUS
+module "hub_cus_to_dataops_qa_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.dataops_qa_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["dataopsqacus"].workload}-${var.subscription_settings["dataopsqacus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_qa_cus, module.hub_cus ]
+}
+
+module "dataops_qa_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsqacus }
+  source_resource_group_name = module.dataops_qa_cus.resource_group_name
+  source_vnet_name    = module.dataops_qa_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsqacus"].workload}-${var.subscription_settings["dataopsqacus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_dataops_qa_cus]
+}
+
+# # dataops QA WUS3
+#-------------------------
+module "hub_wus3_to_dataops_qa_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.dataops_qa_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["dataopsqawus3"].workload}-${var.subscription_settings["dataopsqawus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_qa_wus3, module.hub_wus3 ]
+}
+
+module "dataops_qa_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsqawus3 }
+  source_resource_group_name = module.dataops_qa_wus3.resource_group_name
+  source_vnet_name    = module.dataops_qa_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsqawus3"].workload}-${var.subscription_settings["dataopsqawus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_dataops_qa_wus3]
+}
+
+
+# # dataops Stg CUS
+module "hub_cus_to_dataops_stg_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.dataops_stg_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["dataopsstgcus"].workload}-${var.subscription_settings["dataopsstgcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_stg_cus, module.hub_cus ]
+}
+
+module "dataops_stg_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsstgcus }
+  source_resource_group_name = module.dataops_stg_cus.resource_group_name
+  source_vnet_name    = module.dataops_stg_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsstgcus"].workload}-${var.subscription_settings["dataopsstgcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_dataops_stg_cus]
+}
+
+# # dataops Stg WUS3
+#-------------------------
+module "hub_wus3_to_dataops_stg_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.dataops_stg_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["dataopsstgwus3"].workload}-${var.subscription_settings["dataopsstgwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.dataops_stg_wus3, module.hub_wus3 ]
+}
+
+module "dataops_stg_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.dataopsstgwus3 }
+  source_resource_group_name = module.dataops_stg_wus3.resource_group_name
+  source_vnet_name    = module.dataops_stg_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["dataopsstgwus3"].workload}-${var.subscription_settings["dataopsstgwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_dataops_stg_wus3]
+}
+
+#-------------------------
+# busops Prd CUS
+#-------------------------
+module "hub_cus_to_busops_prd_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+ # subscription_settings = var.subscription_settings["busopsprdcus"]
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.busops_prd_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["busopsprdcus"].workload}-${var.subscription_settings["busopsprdcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_prd_cus, module.hub_cus ]
+}
+
+module "busops_prd_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsprdcus }
+  # subscription_settings = var.subscription_settings["busopsprdcus"]
+  source_resource_group_name = module.busops_prd_cus.resource_group_name
+  source_vnet_name    = module.busops_prd_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsprdcus"].workload}-${var.subscription_settings["busopsprdcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_busops_prd_cus]
+}
+
+#-------------------------
+# busops Prd WUS3
+#-------------------------
+module "hub_wus3_to_busops_prd_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.busops_prd_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["busopsprdwus3"].workload}-${var.subscription_settings["busopsprdwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_prd_wus3, module.hub_wus3 ]
+}
+
+module "busops_prd_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsprdwus3 }
+  source_resource_group_name = module.busops_prd_wus3.resource_group_name
+  source_vnet_name    = module.busops_prd_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsprdwus3"].workload}-${var.subscription_settings["busopsprdwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_busops_prd_wus3]
+}
+
+# # busops Dev CUS
+#-------------------------
+module "hub_cus_to_busops_dev_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.busops_dev_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["busopsdevcus"].workload}-${var.subscription_settings["busopsdevcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_dev_cus, module.hub_cus ]
+}
+
+module "busops_dev_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsdevcus }
+  source_resource_group_name = module.busops_dev_cus.resource_group_name
+  source_vnet_name    = module.busops_dev_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsdevcus"].workload}-${var.subscription_settings["busopsdevcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_busops_dev_cus]
+}
+
+# # busops Dev WUS3
+module "hub_wus3_to_busops_dev_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.busops_dev_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["busopsdevwus3"].workload}-${var.subscription_settings["busopsdevwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_dev_wus3, module.hub_wus3 ]
+}
+
+module "busops_dev_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsdevwus3 }
+  source_resource_group_name = module.busops_dev_wus3.resource_group_name
+  source_vnet_name    = module.busops_dev_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsdevwus3"].workload}-${var.subscription_settings["busopsdevwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_busops_dev_wus3]
+}
+
+
+# # busops QA CUS
+module "hub_cus_to_busops_qa_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.busops_qa_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["busopsqacus"].workload}-${var.subscription_settings["busopsqacus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_qa_cus, module.hub_cus ]
+}
+
+module "busops_qa_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsqacus }
+  source_resource_group_name = module.busops_qa_cus.resource_group_name
+  source_vnet_name    = module.busops_qa_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsqacus"].workload}-${var.subscription_settings["busopsqacus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_busops_qa_cus]
+}
+
+# # busops QA WUS3
+#-------------------------
+module "hub_wus3_to_busops_qa_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.busops_qa_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["busopsqawus3"].workload}-${var.subscription_settings["busopsqawus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_qa_wus3, module.hub_wus3 ]
+}
+
+module "busops_qa_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsqawus3 }
+  source_resource_group_name = module.busops_qa_wus3.resource_group_name
+  source_vnet_name    = module.busops_qa_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsqawus3"].workload}-${var.subscription_settings["busopsqawus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_busops_qa_wus3]
+}
+
+
+# # busops Stg CUS
+module "hub_cus_to_busops_stg_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubcus }
+  source_resource_group_name = module.hub_cus.resource_group_name
+  source_vnet_name    = module.hub_cus.vnet_name
+  remote_vnet_id      = module.busops_stg_cus.vnet_id
+  peering_name        = "hub-cus-to-${var.subscription_settings["busopsstgcus"].workload}-${var.subscription_settings["busopsstgcus"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_stg_cus, module.hub_cus ]
+}
+
+module "busops_stg_cus_to_hub_cus" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsstgcus }
+  source_resource_group_name = module.busops_stg_cus.resource_group_name
+  source_vnet_name    = module.busops_stg_cus.vnet_name
+  remote_vnet_id      = module.hub_cus.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsstgcus"].workload}-${var.subscription_settings["busopsstgcus"].env}-to-hub-cus"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_cus_to_busops_stg_cus]
+}
+
+# # busops Stg WUS3
+#-------------------------
+module "hub_wus3_to_busops_stg_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.hubwus3 }
+  source_resource_group_name = module.hub_wus3.resource_group_name
+  source_vnet_name    = module.hub_wus3.vnet_name
+  remote_vnet_id      = module.busops_stg_wus3.vnet_id
+  peering_name        = "hub-wus3-to-${var.subscription_settings["busopsstgwus3"].workload}-${var.subscription_settings["busopsstgwus3"].env}"
+  allow_forwarded_traffic = true
+  depends_on = [ module.busops_stg_wus3, module.hub_wus3 ]
+}
+
+module "busops_stg_wus3_to_hub_wus3" {
+  source              = "./modules/peering"
+  providers           = { azurerm = azurerm.busopsstgwus3 }
+  source_resource_group_name = module.busops_stg_wus3.resource_group_name
+  source_vnet_name    = module.busops_stg_wus3.vnet_name
+  remote_vnet_id      = module.hub_wus3.vnet_id
+  peering_name        =  "${var.subscription_settings["busopsstgwus3"].workload}-${var.subscription_settings["busopsstgwus3"].env}-to-hub-wus3"
+  allow_forwarded_traffic = true
+  depends_on          = [module.hub_wus3_to_busops_stg_wus3]
+}
