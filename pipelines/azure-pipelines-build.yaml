@@ -1,0 +1,148 @@
+trigger:
+  branches:
+    include:
+      - automationsprd  # Ensures pipeline triggers only on this branch
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: cafterraform-variables-stg  # Use staging variable group
+  - name: env
+    value: 'infrarnd'  # Default environment
+
+stages:
+  - stage: Staging
+    displayName: 'Terraform Staging Deployment'
+    jobs:
+      - job: Terraform
+        timeoutInMinutes: 30  # Auto-fail if job runs too long
+        steps:
+          - checkout: self
+
+          - script: |
+              echo "ARM_CLIENT_ID: $(client_id)"
+              echo "ARM_TENANT_ID: $(tenant_id)"
+              echo "ARM_SUBSCRIPTION_ID: $(subscription_id)"
+              echo "ARM_CLIENT_SECRET: $(client_secret)"
+              echo "Terraform Backend Config:"
+              echo "Storage Account: $(terraformbackendstorageaccount)"
+              echo "Container Name: $(terraformbackendstoragecontainer)"
+              echo "Resource Group: $(terraformbackendresourcegroup)"
+              echo "Terraform State File: $(terraformbackendstatefilename)"
+            displayName: 'Debug: Verify Variable Values'
+
+
+          # Terraform Init (Explicitly using SPN Authentication)
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)
+              terraform init \
+                -backend-config="storage_account_name=$(terraformbackendstorageaccount)" \
+                -backend-config="container_name=$(terraformbackendstoragecontainer)" \
+                -backend-config="key=$(terraformbackendstatefilename)" \
+                -backend-config="resource_group_name=$(terraformbackendresourcegroup)"
+            displayName: 'Terraform Init'
+            env:
+              ARM_CLIENT_ID: $(client_id)
+              ARM_CLIENT_SECRET: $(client_secret)
+              ARM_TENANT_ID: $(tenant_id)
+              ARM_SUBSCRIPTION_ID: $(subscription_id)
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Terraform Validate
+          - script: terraform validate
+            displayName: 'Terraform Validate'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)
+              terraform plan -input=false \
+                   -var="client_id=$(client_id)" \
+                   -var="client_secret=$(client_secret)" \
+                   -var="tenant_id=$(tenant_id)" \
+                   -var="subscription_id=$(subscription_id)" \
+                   -var="storage_account=$(terraformbackendstorageaccount)" \
+                   -var="container_name=$(terraformbackendstoragecontainer)" \
+                   -var="resource_group_name=$(terraformbackendresourcegroup)" \
+                   -var-file="environments/$(env).tfvars" -out=plan.tfplan
+            displayName: 'Terraform Plan'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+
+          # Publish Terraform Plan Artifacts
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Terraform Plan Artifacts'
+            inputs:
+              artifactName: 'terraform_staging'
+             # pathToPublish: '$(Build.SourcesDirectory)/terraform/plan.tfplan'
+              pathToPublish: '$(Build.SourcesDirectory)/terraform'
+
+  - stage: Production
+    displayName: 'Terraform Production Deployment'
+    dependsOn: Staging
+    variables:
+      - group: cafterraform-variables-prd  # Use production variables
+      - name: env
+        value: 'prd'  # Set environment to Production
+
+    jobs:
+      - job: Terraform
+        timeoutInMinutes: 30  # Auto-fail if job runs too long
+        steps:
+          - checkout: self
+
+          # Terraform Init (Explicitly using SPN Authentication)
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)
+              terraform init \
+                -backend-config="storage_account_name=$(terraformbackendstorageaccount)" \
+                -backend-config="container_name=$(terraformbackendstoragecontainer)" \
+                -backend-config="key=$(terraformbackendstatefilename)" \
+                -backend-config="resource_group_name=$(terraformbackendresourcegroup)"
+            displayName: 'Terraform Init'
+            env:
+              ARM_CLIENT_ID: $(client_id)
+              ARM_CLIENT_SECRET: $(client_secret)
+              ARM_TENANT_ID: $(tenant_id)
+              ARM_SUBSCRIPTION_ID: $(subscription_id)
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Terraform Validate
+          - script: terraform validate
+            displayName: 'Terraform Validate'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Terraform Plan
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(subscription_id)        
+              terraform plan -input=false \
+                             -var="client_id=$(client_id)" \
+                             -var="client_secret=$(client_secret)" \
+                             -var="tenant_id=$(tenant_id)" \
+                             -var="subscription_id=$(subscription_id)" \
+                             -var="storage_account=$(terraformbackendstorageaccount)" \
+                             -var="container_name=$(terraformbackendstoragecontainer)" \
+                             -var="resource_group_name=$(terraformbackendresourcegroup)" \
+                             -var-file="environments/$(env).tfvars" -out=plan.tfplan
+            displayName: 'Terraform Plan'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          # Publish Terraform Plan Artifacts
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Terraform Plan Artifacts'
+            inputs:
+              artifactName: 'terraform_prod'
+              #pathToPublish: '$(Build.SourcesDirectory)/terraform/plan.tfplan'
+              pathToPublish: '$(Build.SourcesDirectory)/terraform'
