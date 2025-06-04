@@ -1,0 +1,17 @@
+{
+  "if": {
+    "anyOf": [
+      {
+        "field": "Microsoft.Storage/storageAccounts/allowBlobPublicAccess",
+        "equals": true
+      },
+      {
+        "field": "Microsoft.Storage/storageAccounts/allowSharedKeyAccess",
+        "equals": true
+      }
+    ]
+  },
+  "then": {
+    "effect": "deny"
+  }
+}

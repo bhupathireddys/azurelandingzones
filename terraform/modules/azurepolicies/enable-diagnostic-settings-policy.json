@@ -1,0 +1,103 @@
+{
+  "if": {
+    "anyOf": [
+      { "field": "type", "equals": "Microsoft.Compute/virtualMachines" },
+      { "field": "type", "equals": "Microsoft.Compute/virtualMachineScaleSets" },
+      { "field": "type", "equals": "Microsoft.ContainerService/managedClusters" },
+      { "field": "type", "equals": "Microsoft.Web/sites" },
+      { "field": "type", "equals": "Microsoft.Web/sites/functions" },
+      { "field": "type", "equals": "Microsoft.Storage/storageAccounts" },
+      { "field": "type", "equals": "Microsoft.Network/virtualNetworks" },
+      { "field": "type", "equals": "Microsoft.Network/networkSecurityGroups" },
+      { "field": "type", "equals": "Microsoft.Network/applicationGateways" },
+      { "field": "type", "equals": "Microsoft.Network/loadBalancers" },
+      { "field": "type", "equals": "Microsoft.Network/azureFirewalls" },
+      { "field": "type", "equals": "Microsoft.Network/vpnGateways" },
+      { "field": "type", "equals": "Microsoft.KeyVault/vaults" },
+      { "field": "type", "equals": "Microsoft.Sql/servers/databases" },
+      { "field": "type", "equals": "Microsoft.OperationalInsights/workspaces" },
+      { "field": "type", "equals": "Microsoft.Insights/components" },
+      { "field": "type", "equals": "Microsoft.Databricks/workspaces" },
+      { "field": "type", "equals": "Microsoft.MachineLearningServices/workspaces" },
+      { "field": "type", "equals": "Microsoft.RecoveryServices/vaults" },
+      { "field": "type", "equals": "Microsoft.Synapse/workspaces" }
+    ]
+  },
+  "then": {
+    "effect": "deployIfNotExists",
+    "details": {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "existenceCondition": {
+        "allOf": [
+          { "field": "Microsoft.Insights/diagnosticSettings/workspaceId", "exists": "true" }
+        ]
+      },
+      "roleDefinitionIds": [
+        "/providers/microsoft.authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
+      ],
+      "deployment": {
+        "properties": {
+          "mode": "incremental",
+          "template": {
+            "$schema": "http://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "resources": [
+              {
+                "type": "Microsoft.Insights/diagnosticSettings",
+                "apiVersion": "2021-05-01-preview",
+                "name": "[concat(parameters('resourceName'), '/diagnosticSettings')]",
+                "properties": {
+                  "workspaceId": "[parameters('logAnalyticsWorkspaceId')]",
+                  "logs": [
+                    {
+                      "category": "AuditLogs",
+                      "enabled": true,
+                      "retentionPolicy": {
+                        "enabled": "[parameters('logsRetentionPolicyEnabled')]",
+                        "days": "[parameters('logsRetentionDays')]"
+                      }
+                    },
+                    { "category": "CoreAzureBackup", "enabled": true, "retentionPolicy": { "enabled": false, "days": 0 } },
+                    { "category": "AzureBackupOperations", "enabled": true, "retentionPolicy": { "enabled": false, "days": 0 } },
+                    { "category": "AddonAzureBackupJobData", "enabled": true, "retentionPolicy": { "enabled": false, "days": 0 } },
+                    { "category": "AddonAzureBackupAlertData", "enabled": true, "retentionPolicy": { "enabled": false, "days": 0 } },
+                    { "category": "AzureSiteRecoveryJobs", "enabled": true, "retentionPolicy": { "enabled": false, "days": 0 } },
+                    { "category": "AzureSiteRecoveryReplicatedItems", "enabled": true, "retentionPolicy": { "enabled": false, "days": 0 } }
+                  ],
+                  "metrics": [
+                    {
+                      "category": "AllMetrics",
+                      "enabled": true,
+                      "retentionPolicy": {
+                        "enabled": "[parameters('metricsRetentionPolicyEnabled')]",
+                        "days": "[parameters('metricsRetentionDays')]"
+                      }
+                    }
+                  ]
+                },
+                "dependsOn": []
+              }
+            ]
+          },
+          "parameters": {
+            "logAnalyticsWorkspaceId": {
+              "value": "[parameters('logAnalyticsWorkspaceId')]"
+            },
+            "logsRetentionPolicyEnabled": {
+              "value": "[parameters('logsRetentionPolicyEnabled')]"
+            },
+            "logsRetentionDays": {
+              "value": "[parameters('logsRetentionDays')]"
+            },
+            "metricsRetentionPolicyEnabled": {
+              "value": "[parameters('metricsRetentionPolicyEnabled')]"
+            },
+            "metricsRetentionDays": {
+              "value": "[parameters('metricsRetentionDays')]"
+            }
+          }
+        }
+      }
+    }
+  }
+}
