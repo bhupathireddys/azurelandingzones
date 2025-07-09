@@ -1,0 +1,24 @@
+{
+  "if": {
+    "field": "type",
+    "equals": "Microsoft.Storage/storageAccounts"
+  },
+  "then": {
+    "effect": "auditIfNotExists",
+    "details": {
+      "type": "Microsoft.Storage/storageAccounts",
+      "existenceCondition": {
+        "anyOf": [
+          {
+            "field": "Microsoft.Storage/storageAccounts/allowBlobPublicAccess",
+            "equals": false
+          },
+          {
+            "field": "Microsoft.Storage/storageAccounts/allowSharedKeyAccess",
+            "equals": false
+          }
+        ]
+      }
+    }
+  }
+}

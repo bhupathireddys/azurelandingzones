@@ -1,0 +1,35 @@
+{
+  "mode": "All",
+  "parameters": {
+    "allowedLocations": {
+      "type": "Array",
+      "metadata": {
+        "description": "The list of allowed locations",
+        "displayName": "Allowed locations",
+        "strongType": "location"
+      },
+      "defaultValue": ["centralus", "westus2"]
+    }
+  },
+  "policyRule": {
+    "if": {
+      "allOf": [
+        {
+          "field": "location",
+          "notIn": "[parameters('allowedLocations')]"
+        },
+        {
+          "field": "location",
+          "notEquals": "global"
+        },
+        {
+          "field": "type",
+          "notLike": "Microsoft.AzureActiveDirectory/*"
+        }
+      ]
+    },
+    "then": {
+      "effect": "deny"
+    }
+  }
+}

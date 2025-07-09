@@ -1,0 +1,24 @@
+{
+  "if": {
+    "field": "type",
+    "equals": "Microsoft.Storage/storageAccounts"
+  },
+  "then": {
+    "effect": "deny",
+    "details": {
+      "type": "Microsoft.Network/privateEndpoints",
+      "existenceCondition": {
+        "allOf": [
+          {
+            "field": "Microsoft.Network/privateEndpoints/privateLinkServiceConnections[*].privateLinkServiceId",
+            "equals": "[field('id')]"
+          },
+          {
+            "field": "Microsoft.Network/privateEndpoints/privateLinkServiceConnections[*].provisioningState",
+            "equals": "Succeeded"
+          }
+        ]
+      }
+    }
+  }
+}

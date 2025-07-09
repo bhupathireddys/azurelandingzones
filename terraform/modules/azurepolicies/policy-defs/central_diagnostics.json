@@ -1,0 +1,99 @@
+{
+  "if": {
+    "allOf": [
+      {
+        "field": "type",
+        "equals": "[parameters('resourceType')]"
+      },
+      {
+        "field": "tags.env",
+        "in": ["prd", "dev", "test", "stg", "qa", "sbx", "uvm"]
+      }
+    ]
+  },
+  "then": {
+    "effect": "[parameters('effect')]",
+    "details": {
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "name": "setbypolicy",
+      "existenceCondition": {
+        "allOf": [
+          {
+            "field": "Microsoft.Insights/diagnosticSettings/workspaceId",
+            "equals": "[parameters('workspaceId')]"
+          },
+          {
+            "count": {
+              "field": "Microsoft.Insights/diagnosticSettings/logs[*]",
+              "where": {
+                "allOf": [
+                  {
+                    "field": "Microsoft.Insights/diagnosticSettings/logs[*].enabled",
+                    "equals": "True"
+                  }
+                ]
+              }
+            },
+            "greaterOrEquals": 1
+          }
+        ]
+      },
+      "roleDefinitionIds": [
+        "/providers/microsoft.authorization/roleDefinitions/749f88d5-cbae-40b8-bcfc-e573ddc772fa"
+      ],
+      "deployment": {
+        "properties": {
+          "mode": "incremental",
+          "template": {
+            "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "parameters": {
+              "resourceName": {
+                "type": "String"
+              },
+              "workspaceId": {
+                "type": "String"
+              },
+              "resourceType": {
+                "type": "String"
+              }
+            },
+            "variables": {
+              "resourceId": "[concat(resourceId(parameters('resourceType'), parameters('resourceName')))]"
+            },
+            "resources": [
+              {
+                "type": "Microsoft.Insights/diagnosticSettings",
+                "apiVersion": "2021-05-01-preview",
+                "name": "setbypolicy",
+                "properties": {
+                  "workspaceId": "[parameters('workspaceId')]",
+                  "logs": [
+                    {
+                      "category": "None",
+                      "enabled": false,
+                      "retentionPolicy": {
+                        "enabled": false,
+                        "days": 0
+                      }
+                    }
+                  ],
+                  "metrics": [
+                    {
+                      "category": "AllMetrics",
+                      "enabled": true,
+                      "retentionPolicy": {
+                        "enabled": true,
+                        "days": 30
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "if": {
+    "field": "type",
+    "equals": "Microsoft.KeyVault/vaults"
+  },
+  "then": {
+    "effect": "deployIfNotExists",
+    "details": {
+      "type": "Microsoft.KeyVault/vaults",
+      "roleDefinitionIds": [
+        "/providers/Microsoft.Authorization/roleDefinitions/fd9c33c7-b4e0-49a6-8b00-77f05ec30643"
+      ],
+      "deployment": {
+        "properties": {
+          "mode": "incremental",
+          "template": {
+            "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+            "contentVersion": "1.0.0.0",
+            "resources": [
+              {
+                "type": "Microsoft.KeyVault/vaults",
+                "name": "[field('name')]",
+                "apiVersion": "2021-11-01-preview",
+                "properties": {
+                  "enableSoftDelete": true,
+                  "enablePurgeProtection": true
+                }
+              }
+            ]
+          },
+          "parameters": {}
+        }
+      }
+    }
+  }
+}

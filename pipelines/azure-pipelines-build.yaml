@@ -1,0 +1,132 @@
+name: nexgenix_foundation_terraform
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: nexgenix-foundation
+  - name: env
+    value: 'nexgenix'
+
+stages:
+  - stage: nexgenixfoundation
+    displayName: 'Terraform Automation by infrastructure Team'
+    jobs:
+      - job: Terraform
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+
+          - script: |
+              echo "ARM_CLIENT_ID: $(client_id)"
+              echo "ARM_TENANT_ID: $(tenant_id)"
+              echo "ARM_SUBSCRIPTION_ID: $(auth_subscription_id)"
+              echo "Backend Storage Account: $(terraformbackendstorageaccount)"
+              echo "Container Name: $(terraformbackendstoragecontainer)"
+              echo "Resource Group: $(terraformbackendresourcegroup)"
+              echo "State File: $(terraformstatefilename)"
+              echo "hubsub_ID: $(hubsub_ID)"
+              echo "iamsub_ID: $(iamsub_ID)"
+              echo "mgmtsub_ID: $(mgmtsub_ID)"
+              echo "cloudautosub_ID: $(cloudautosub_ID)"
+              echo "engplatformsub_ID: $(engplatformsub_ID)"
+              echo "eucsub_ID: $(eucsub_ID)"
+              echo "cspsub_ID: $(cspsub_ID)"
+              echo "csnpsub_ID: $(csnpsub_ID)"                          
+              echo "dataopsnpsub_ID: $(dataopsnpsub_ID)"
+              echo "dataopspsub_ID: $(dataopspsub_ID)"
+              echo "busopsnpsub_ID: $(busopsnpsub_ID)"
+              echo "busopspsub_ID: $(busopspsub_ID)"              
+              echo "eopsnpsub_ID: $(eopsnpsub_ID)"
+              echo "eopspsub_ID: $(eopspsub_ID)"              
+              echo "sbxsub_ID: $(sbxsub_ID)"
+              echo "auth_subscription_id: $(auth_subscription_id)"
+            displayName: 'Debug: Verify Variables'
+
+          - script: |
+              sed -i "s|##{auth_subscription_id}##|$(auth_subscription_id)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{hubsub_ID}##|$(hubsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars              
+              sed -i "s|##{iamsub_ID}##|$(iamsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{mgmtsub_ID}##|$(mgmtsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{cloudautosub_ID}##|$(cloudautosub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{engplatformsub_ID}##|$(engplatformsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars      
+              sed -i "s|##{eucsub_ID}##|$(eucsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{cspsub_ID}##|$(cspsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{csnpsub_ID}##|$(csnpsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars              
+              sed -i "s|##{dataopsnpsub_ID}##|$(dataopsnpsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{dataopspsub_ID}##|$(dataopspsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{busopsnpsub_ID}##|$(busopsnpsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{busopspsub_ID}##|$(busopspsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars              
+              sed -i "s|##{eopsnpsub_ID}##|$(eopsnpsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{eopspsub_ID}##|$(eopspsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+              sed -i "s|##{sbxsub_ID}##|$(sbxsub_ID)|g" $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+
+            displayName: 'SED Replace Subscription IDs'
+
+          - script: |
+              echo "===== Debug: Content of $(env).tfvars after SED replace ====="
+              cat $(Build.SourcesDirectory)/terraform/environments/$(env).tfvars
+            displayName: 'Debug: Check tfvars after SED replacement'
+
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-installer-task.TerraformInstaller@1
+            displayName: 'Install Terraform CLI'
+            inputs:
+              terraformVersion: '$(terraformVersion)'
+
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(auth_subscription_id)
+              terraform init \
+                -backend-config="storage_account_name=$(terraformbackendstorageaccount)" \
+                -backend-config="container_name=$(terraformbackendstoragecontainer)" \
+                -backend-config="key=$(terraformstatefilename)" \
+                -backend-config="resource_group_name=$(terraformbackendresourcegroup)"
+            displayName: 'Terraform Init'
+            env:
+              ARM_CLIENT_ID: $(client_id)
+              ARM_CLIENT_SECRET: $(client_secret)
+              ARM_TENANT_ID: $(tenant_id)
+              ARM_SUBSCRIPTION_ID: $(auth_subscription_id)
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          - script: terraform validate
+            displayName: 'Terraform Validate'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          - script: |
+              export ARM_CLIENT_ID=$(client_id)
+              export ARM_CLIENT_SECRET=$(client_secret)
+              export ARM_TENANT_ID=$(tenant_id)
+              export ARM_SUBSCRIPTION_ID=$(auth_subscription_id)
+              terraform plan -input=false \
+                -var="client_id=$(client_id)" \
+                -var="client_secret=$(client_secret)" \
+                -var="tenant_id=$(tenant_id)" \
+                -var="subscription_id=$(auth_subscription_id)" \
+                -var="storage_account=$(terraformbackendstorageaccount)" \
+                -var="container_name=$(terraformbackendstoragecontainer)" \
+                -var="resource_group_name=$(terraformbackendresourcegroup)" \
+                -var-file="environments/$(env).tfvars" \
+                -out=plan.tfplan
+            displayName: 'Terraform Plan'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          - script: |
+              rm -rf .terraform
+              rm -f .terraform.lock.hcl
+            displayName: 'Cleanup: Remove .terraform & lock file'
+            workingDirectory: $(Build.SourcesDirectory)/terraform
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Terraform Plan Artifact'
+            inputs:
+              artifactName: 'terraform__foundation'
+              pathToPublish: '$(Build.SourcesDirectory)/terraform'
+              publishLocation: 'Container'
